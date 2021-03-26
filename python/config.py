@@ -24,6 +24,8 @@ if DEVICE == 'esp8266':
     """Port number used for socket communication between Python and ESP8266"""
     SOFTWARE_GAMMA_CORRECTION = False
     """Set to False because the firmware handles gamma correction + dither"""
+    WLED = True
+    """Set to True if connecting to ESP using WLED"""
 
 if DEVICE == 'pi':
     LED_PIN = 18

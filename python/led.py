@@ -69,7 +69,10 @@ def _update_esp8266():
     n_packets = len(idx) // MAX_PIXELS_PER_PACKET + 1
     idx = np.array_split(idx, n_packets)
     for packet_indices in idx:
-        m = '' if _is_python_2 else []
+        if WLED:
+            m = chr(1) + chr(2) if _is_python_2 else [1,2]
+        else:
+            m = '' if _is_python_2 else []
         for i in packet_indices:
             if _is_python_2:
                 m += chr(i) + chr(p[0][i]) + chr(p[1][i]) + chr(p[2][i])
