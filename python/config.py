@@ -103,3 +103,11 @@ N_ROLLING_HISTORY = 2
 
 MIN_VOLUME_THRESHOLD = 1e-7
 """No music visualization displayed if recorded audio volume below threshold"""
+
+MAX_BRIGHTNESS = 255
+"""Brightness of LED strip between 0 and 255"""
+AMBIENT_BRIGHTNESS = 45
+"""Ambient brightness of LED strip between 0 and 255. Must be below MAX_BRIGHTNESS."""
+R_SCALE = 1.0
+G_SCALE = 1.0
+B_SCALE = 1.0
