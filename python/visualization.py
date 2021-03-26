@@ -154,6 +154,18 @@ def visualize_energy(y):
     return np.concatenate((p[:, ::-1], p), axis=1)
 
 
+def visualize_flat(y):
+    """Effect that expands from the center with increasing sound energy"""
+    global p
+    y = np.copy(y)
+    gain.update(y)
+    y /= gain.value
+    mean = int(np.mean(y) * 255)
+    p.fill(mean)
+    # Set the new pixel value
+    return np.concatenate((p[:, ::-1], p), axis=1)
+
+
 _prev_spectrum = np.tile(0.01, config.N_PIXELS // 2)
 
 
@@ -186,10 +198,25 @@ volume = dsp.ExpFilter(config.MIN_VOLUME_THRESHOLD,
                        alpha_decay=0.02, alpha_rise=0.02)
 fft_window = np.hamming(int(config.MIC_RATE / config.FPS) * config.N_ROLLING_HISTORY)
 prev_fps_update = time.time()
+no_audio = False
+
+
+def map_pixels(pixels, in_min, in_max, out_min, out_max):
+    # Re-maps pixel values from one range to another.
+    return (pixels - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+
+
+def scale_pixels(pixels):
+    map_pixels(pixels, 0, 255, config.AMBIENT_BRIGHTNESS, config.MAX_BRIGHTNESS)
+
+    pixels[0]=(pixels[0] * config.R_SCALE)
+    pixels[1]=(pixels[1] * config.G_SCALE)
+    pixels[2]=(pixels[2] * config.B_SCALE)
+    return pixels
 
 
 def microphone_update(audio_samples):
-    global y_roll, prev_rms, prev_exp, prev_fps_update
+    global y_roll, prev_rms, prev_exp, prev_fps_update, no_audio
     # Normalize samples between 0 and 1
     y = audio_samples / 2.0**15
     # Construct a rolling window of audio samples
@@ -199,10 +226,13 @@ def microphone_update(audio_samples):
     
     vol = np.max(np.abs(y_data))
     if vol < config.MIN_VOLUME_THRESHOLD:
-        print('No audio input. Volume below threshold. Volume:', vol)
-        led.pixels = np.tile(0, (3, config.N_PIXELS))
+        if not no_audio:
+            print('No audio input. Volume below threshold. Volume:', vol)
+        no_audio = True
+        led.pixels = scale_pixels(np.tile(0, (3, config.N_PIXELS)))
         led.update()
     else:
+        no_audio = False
         # Transform audio input into the frequency domain
         N = len(y_data)
         N_zeros = 2**int(np.ceil(np.log2(N))) - N
@@ -222,7 +252,7 @@ def microphone_update(audio_samples):
         mel = mel_smoothing.update(mel)
         # Map filterbank output onto LED strip
         output = visualization_effect(mel)
-        led.pixels = output
+        led.pixels = scale_pixels(output)
         led.update()
         if config.USE_GUI:
             # Plot filterbank output
@@ -312,6 +342,55 @@ if __name__ == '__main__':
         freq_label.setText('Frequency range: {} - {} Hz'.format(
             config.MIN_FREQUENCY,
             config.MAX_FREQUENCY))
+        # Brightness range label
+        brightness_label = pg.LabelItem('')
+        def set_brightness_label():
+            brightness_label.setText('Brightness range: {} - {}'.format(
+                config.AMBIENT_BRIGHTNESS,
+                config.MAX_BRIGHTNESS))
+        # Brightness slider
+        def brightness_slider_change(tick):
+            minb = brightness_slider.tickValue(0) * 255
+            maxb = brightness_slider.tickValue(1) * 255
+            config.AMBIENT_BRIGHTNESS = round(minb)
+            config.MAX_BRIGHTNESS = round(maxb)
+            set_brightness_label()
+        brightness_slider = pg.TickSliderItem(orientation='bottom', allowAdd=False)
+        brightness_slider.addTick(config.AMBIENT_BRIGHTNESS / 255)
+        brightness_slider.addTick(config.MAX_BRIGHTNESS / 255)
+        brightness_slider.tickMoveFinished = brightness_slider_change
+        set_brightness_label()
+        # RGB Scaling
+        scale_label = pg.LabelItem('')
+        def round_scale(scale):
+            return round(float(scale) * 100) / 100
+        def set_scale_label():
+            scale_label.setText('RGB Scale: [{},{},{}]'.format(
+                config.R_SCALE,
+                config.G_SCALE,
+                config.B_SCALE))
+        def r_scale_slider_change(tick):
+            scale = r_scale_slider.tickValue(0)
+            config.R_SCALE = round_scale(scale)
+            set_scale_label()
+        r_scale_slider = pg.TickSliderItem(orientation='bottom', allowAdd=False)
+        r_scale_slider.addTick(1.0, color='#FF0000')
+        r_scale_slider.tickMoveFinished = r_scale_slider_change
+        def g_scale_slider_change(tick):
+            scale = g_scale_slider.tickValue(0)
+            config.G_SCALE = round_scale(scale)
+            set_scale_label()
+        g_scale_slider = pg.TickSliderItem(orientation='bottom', allowAdd=False)
+        g_scale_slider.addTick(1.0, color='#00FF00')
+        g_scale_slider.tickMoveFinished = g_scale_slider_change
+        def b_scale_slider_change(tick):
+            scale = b_scale_slider.tickValue(0)
+            config.B_SCALE = round_scale(scale)
+            set_scale_label()
+        b_scale_slider = pg.TickSliderItem(orientation='bottom', allowAdd=False)
+        b_scale_slider.addTick(1.0, color='#0000FF')
+        b_scale_slider.tickMoveFinished = b_scale_slider_change
+        set_scale_label()
         # Effect selection
         active_color = '#16dbeb'
         inactive_color = '#FFFFFF'
@@ -321,35 +400,60 @@ if __name__ == '__main__':
             energy_label.setText('Energy', color=active_color)
             scroll_label.setText('Scroll', color=inactive_color)
             spectrum_label.setText('Spectrum', color=inactive_color)
+            flat_label.setText('Flat', color=inactive_color)
         def scroll_click(x):
             global visualization_effect
             visualization_effect = visualize_scroll
             energy_label.setText('Energy', color=inactive_color)
             scroll_label.setText('Scroll', color=active_color)
             spectrum_label.setText('Spectrum', color=inactive_color)
+            flat_label.setText('Flat', color=inactive_color)
         def spectrum_click(x):
             global visualization_effect
             visualization_effect = visualize_spectrum
             energy_label.setText('Energy', color=inactive_color)
             scroll_label.setText('Scroll', color=inactive_color)
             spectrum_label.setText('Spectrum', color=active_color)
+            flat_label.setText('Flat', color=inactive_color)
+        def flat_click(x):
+            global visualization_effect
+            visualization_effect = visualize_flat
+            energy_label.setText('Energy', color=inactive_color)
+            scroll_label.setText('Scroll', color=inactive_color)
+            spectrum_label.setText('Spectrum', color=inactive_color)
+            flat_label.setText('Flat', color=active_color)
         # Create effect "buttons" (labels with click event)
         energy_label = pg.LabelItem('Energy')
         scroll_label = pg.LabelItem('Scroll')
         spectrum_label = pg.LabelItem('Spectrum')
+        flat_label = pg.LabelItem('Flat')
         energy_label.mousePressEvent = energy_click
         scroll_label.mousePressEvent = scroll_click
         spectrum_label.mousePressEvent = spectrum_click
+        flat_label.mousePressEvent = flat_click
         energy_click(0)
         # Layout
+        layout.nextRow()
         layout.nextRow()
         layout.addItem(freq_label, colspan=3)
         layout.nextRow()
         layout.addItem(freq_slider, colspan=3)
         layout.nextRow()
+        layout.addItem(brightness_label, colspan=3)
+        layout.nextRow()
+        layout.addItem(brightness_slider, colspan=3)
+        layout.nextRow()
+        layout.addItem(scale_label, colspan=3)
+        layout.nextRow()
+        layout.addItem(r_scale_slider)
+        layout.addItem(g_scale_slider)
+        layout.addItem(b_scale_slider)
+        layout.nextRow()
         layout.addItem(energy_label)
         layout.addItem(scroll_label)
         layout.addItem(spectrum_label)
+        layout.nextRow()
+        layout.addItem(flat_label)
     # Initialize LEDs
     led.update()
     # Start listening to live audio stream
